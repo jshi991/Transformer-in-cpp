@@ -7,9 +7,15 @@ TARGET := $(BUILD_DIR)/transformer
 SRCS := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
 
+NVCC := nvcc
+NVCCFLAGS := -std=c++17 -Iinclude
+CUDA_TARGET := $(BUILD_DIR)/transformer_cuda
+CUDA_SRCS := $(shell find $(SRC_DIR) -name '*.cu')
+CUDA_OBJS := $(CUDA_SRCS:$(SRC_DIR)/%.cu=$(BUILD_DIR)/%.cu.o)
+
 UNAME_S := $(shell uname -s)
 
-.PHONY: all linux macos clean
+.PHONY: all linux macos cuda clean
 
 all:
 ifeq ($(UNAME_S),Darwin)
@@ -24,12 +30,21 @@ linux: $(TARGET)
 macos: CXX := clang++
 macos: $(TARGET)
 
+cuda: $(CUDA_TARGET)
+
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(CUDA_TARGET): $(CUDA_OBJS)
+	$(NVCC) -o $@ $^
+
+$(BUILD_DIR)/%.cu.o: $(SRC_DIR)/%.cu
+	@mkdir -p $(dir $@)
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)
