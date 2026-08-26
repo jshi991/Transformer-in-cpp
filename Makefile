@@ -1,4 +1,4 @@
-CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude
+CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude -I.
 
 SRC_DIR := src
 BUILD_DIR := build
@@ -8,10 +8,10 @@ SRCS := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
 
 NVCC := nvcc
-NVCCFLAGS := -std=c++17 -Iinclude
+NVCCFLAGS := -std=c++17 -Iinclude -I.
 CUDA_TARGET := $(BUILD_DIR)/transformer_cuda
-CUDA_SRCS := $(shell find $(SRC_DIR) -name '*.cu')
-CUDA_OBJS := $(CUDA_SRCS:$(SRC_DIR)/%.cu=$(BUILD_DIR)/%.cu.o)
+CUDA_SRCS := $(shell find $(SRC_DIR) database -name '*.cu' 2>/dev/null)
+CUDA_OBJS := $(patsubst %.cu,$(BUILD_DIR)/%.cu.o,$(CUDA_SRCS))
 
 UNAME_S := $(shell uname -s)
 
@@ -42,7 +42,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 $(CUDA_TARGET): $(CUDA_OBJS)
 	$(NVCC) -o $@ $^
 
-$(BUILD_DIR)/%.cu.o: $(SRC_DIR)/%.cu
+$(BUILD_DIR)/%.cu.o: %.cu
 	@mkdir -p $(dir $@)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 

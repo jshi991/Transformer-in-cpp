@@ -137,6 +137,12 @@ const std::vector<uint16_t>& Jensor<T>::shape() const { return dims_; }
 template <typename T>
 bool Jensor<T>::on_gpu() const { return is_on_gpu_; }
 
+template <typename T>
+T* Jensor<T>::data() { return buf_.get() + offset_; }
+
+template <typename T>
+const T* Jensor<T>::data() const { return buf_.get() + offset_; }
+
 template struct CudaDeleter<float>;
 template class Jensor<float>;
 

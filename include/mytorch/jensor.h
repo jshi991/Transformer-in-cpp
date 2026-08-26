@@ -45,6 +45,13 @@ class Jensor {
         const std::vector<uint16_t>& shape() const;
         bool on_gpu() const;
 
+        // Raw pointer into this Jensor's storage (already offset for views).
+        // Points into device memory when on_gpu() — deref only via cudaMemcpy
+        // or a kernel, never directly from host code. Exists so callers (e.g.
+        // database/dataset.cu) can copy data in/out; no bounds checking.
+        T* data();
+        const T* data() const;
+
     private:
         enum class Op { Add, Sub, Mul };
         Jensor();

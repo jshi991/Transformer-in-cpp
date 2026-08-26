@@ -1,0 +1,4 @@
+# Raw dataset files land here (downloaded on-device, see ../README.md).
+# Keep the directory in git, ignore its contents.
+*
+!.gitignore
