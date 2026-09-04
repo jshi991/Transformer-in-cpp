@@ -30,6 +30,13 @@ class Jensor {
         Jensor(std::initializer_list<uint16_t> shape, AllocateOnCpu_t);
         Jensor(std::initializer_list<uint16_t> shape, AllocateOnGpu_t);
 
+
+        // Backend::Naive dispatches to the hand-written kernel (agents.md/01);
+        // Backend::CuBLAS dispatches to cublasSgemm (agents.md/02) — both
+        // exist so benchmarks/matmul/ can run the same inputs through each
+        // and compare.
+        enum class Backend { Naive, CuBLAS };
+        Jensor matmul(const Jensor& other, Backend backend = Backend::Naive) const;
         // Views share storage with their parent (bumps the refcount, no copy);
         // still returns a Jensor (even 0-dimensional) rather than a raw T so
         // that indexing stays an operation you can eventually differentiate through.
@@ -41,6 +48,10 @@ class Jensor {
 
         Jensor concat(const Jensor& other);
         Jensor reshape(std::initializer_list<uint16_t> new_shape);
+
+        // Root Jensors only (offset_ == 0) — see discussion in-session about
+        // why a view calling this is unsafe. Body still WIP.
+        void move_device();
 
         const std::vector<uint16_t>& shape() const;
         bool on_gpu() const;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <functional>
 #include <numeric>
@@ -10,8 +11,90 @@
 
 namespace mytorch {
 
+
+
 template <typename T>
 void CudaDeleter<T>::operator()(T* ptr) const { cudaFree(ptr); }
+
+
+//a M X N 
+//b N X V
+template <typename T>
+__global__ void matmul_gpu(const T* a, const T* b, T* c, int finalRow, int finalCol, int N, int V) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+
+    if(row < finalRow && col < finalCol) {
+        T totalSum{};
+        for(int i = 0; i < innderDim; i++) {
+            totalSum += a[row * N + i] * b[i * V + col];
+        }
+
+        c[row * V + col] = totalSum;
+    }
+}
+
+template <typename T>
+Jensor<T> Jensor<T>::matmul(const Jensor& other, Backend backend) const {
+    assert((dims_.size() == 2 && other.dims_.size() == 2) && "high dimension matrix mult unsupported");
+
+    switch (backend) {
+        case Backend::Naive: {
+            assert((is_on_gpu_ ^ other.is_on_gpu_) && "Jensors must be ON GPU to multiply");
+
+            Jensor<T> ret([dims_[0], other.dims_[1]], is_on_gpu_ ?? AllocateOnGpu_t : AllocateOnCpu_t);
+            if(is_on_gpu_) {
+                dim3 threadsPerBlock(16, 16);
+                dim3 numBlocks((dims_[0] + threadsPerBlock.x - 1) / threadsPerBlock.x,
+                (dims_[1] + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+                matmul_gpu<<<threadsPerBlock, numBlocks>>>(buf_, other.buf_, ret.buf_, ret.dims_[0], ret.dims_[1], dims_[1], other.dims_[1]);
+            } else {
+                //not yet implemented
+            }
+            return ret;
+        }
+
+        case Backend::CuBLAS: {
+            assert(is_on_gpu_ && other.is_on_gpu_ &&
+                   "cuBLAS matmul requires both operands to already be on the GPU");
+
+            uint16_t M = dims_[0];
+            uint16_t K = dims_[1];
+            uint16_t N = other.dims_[1];
+            assert(K == other.dims_[0] && "inner dims must match: A's columns == B's rows");
+
+            Jensor<T> result({M, N}, is_on_gpu_);
+
+            cublasHandle_t handle;
+            cublasCreate(&handle);
+
+            const float alpha = 1.0f;
+            const float beta = 0.0f;
+
+            cublasSgemm(handle,
+                        CUBLAS_OP_N, CUBLAS_OP_N,
+                        N, M, K,
+                        &alpha,
+                        other.data(), N,   // reinterpreted as B^T (N x K)
+                        this->data(), K,   // reinterpreted as A^T (K x M)
+                        &beta,
+                        result.data(), N); // writes C^T (N x M) == C row-major (M x N)
+
+            cudaDeviceSynchronize();
+            cublasDestroy(handle);
+            return result;
+        }
+    }
+
+    return *this; 
+}
+
+template <typename T>
+void Jensor<T>::move_device() {
+//move device need to think about offset situation
+}
 
 template <typename T>
 __global__ void cuda_add(const T* a, const T* b, T* c, long long n) {
