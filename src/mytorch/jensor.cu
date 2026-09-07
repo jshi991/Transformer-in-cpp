@@ -16,6 +16,16 @@ namespace mytorch {
 template <typename T>
 void CudaDeleter<T>::operator()(T* ptr) const { cudaFree(ptr); }
 
+//REFACTOR LATER -> naive implementation 
+template <typename T>
+__global__ void transpose(const T* outPtr, const T* inPtr, int finalRow, int finalCol) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if(row < finalRow && col < finalCol) {
+        outPtr[i * finalCol + row] = inPtr[i * finalRow + col];   
+    }
+}
 
 //a M X N 
 //b N X V
@@ -36,6 +46,13 @@ __global__ void matmul_gpu(const T* a, const T* b, T* c, int finalRow, int final
 }
 
 template <typename T>
+void Jensor<T>::transpose() {
+    
+}
+
+
+//matmul is only supported for 2 by 2 case -> refactors may be needed for further support 
+template <typename T>
 Jensor<T> Jensor<T>::matmul(const Jensor& other, Backend backend) const {
     assert((dims_.size() == 2 && other.dims_.size() == 2) && "high dimension matrix mult unsupported");
 
@@ -43,7 +60,8 @@ Jensor<T> Jensor<T>::matmul(const Jensor& other, Backend backend) const {
         case Backend::Naive: {
             assert((is_on_gpu_ ^ other.is_on_gpu_) && "Jensors must be ON GPU to multiply");
 
-            Jensor<T> ret([dims_[0], other.dims_[1]], is_on_gpu_ ?? AllocateOnGpu_t : AllocateOnCpu_t);
+            Jensor<T> ret = is_on_gpu_ ? Jensor<T>({dims_[0], other.dims_[1]}, AllocateOnGpu)
+                                        : Jensor<T>({dims_[0], other.dims_[1]}, AllocateOnCpu);
             if(is_on_gpu_) {
                 dim3 threadsPerBlock(16, 16);
                 dim3 numBlocks((dims_[0] + threadsPerBlock.x - 1) / threadsPerBlock.x,
@@ -65,7 +83,7 @@ Jensor<T> Jensor<T>::matmul(const Jensor& other, Backend backend) const {
             uint16_t N = other.dims_[1];
             assert(K == other.dims_[0] && "inner dims must match: A's columns == B's rows");
 
-            Jensor<T> result({M, N}, is_on_gpu_);
+            Jensor<T> result({M, N}, AllocateOnGpu);
 
             cublasHandle_t handle;
             cublasCreate(&handle);
@@ -93,25 +111,20 @@ Jensor<T> Jensor<T>::matmul(const Jensor& other, Backend backend) const {
 
 template <typename T>
 void Jensor<T>::move_device() {
-//move device need to think about offset situation
-}
+    T* newRaw = nullptr;
+    long long total = std::accumulate(dims_.begin(), dims_.end(), 1LL, std::multiplies<long long>());
+    
+    cudaMemcpyKind type = is_on_gpu_ ? cudaMemcpyDeviceToHost : cudaMemcpyHostToDevice;
 
-template <typename T>
-__global__ void cuda_add(const T* a, const T* b, T* c, long long n) {
-    long long i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) c[i] = a[i] + b[i];
-}
-
-template <typename T>
-__global__ void cuda_sub(const T* a, const T* b, T* c, long long n) {
-    long long i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) c[i] = a[i] - b[i];
-}
-
-template <typename T>
-__global__ void cuda_mul(const T* a, const T* b, T* c, long long n) {
-    long long i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) c[i] = a[i] * b[i];
+    cudaError_t e = cudaMemcpy(newRaw, buf_, total, type);
+    if(e) {
+        throw e;
+    }
+    
+    if(is_on_gpu_) 
+        buf_ = std::shared_ptr<T[]>(newRaw, myCudaDeleter<T>());
+    else 
+        buf_ = std::shared_ptr<T[]>(newRaw);
 }
 
 template <typename T>
@@ -119,11 +132,26 @@ Jensor<T>::Jensor() = default;
 
 template <typename T>
 Jensor<T>::Jensor(std::initializer_list<uint16_t> shape, AllocateOnCpu_t)
-    : Jensor(std::vector<uint16_t>(shape), false) {}
+    : is_on_gpu_(false), dims_(shape), offset_(0) {
+    assert(dims_.size() > 0 && dims_.size() <= 255 && "Jensor dimensions must be between 1 and 255");
+
+    long long total = std::accumulate(dims_.begin(), dims_.end(), 1LL, std::multiplies<long long>());
+    T* raw = new T[total];
+    std::fill(raw, raw + total, T(0));
+    buf_ = std::shared_ptr<T[]>(raw);
+}
 
 template <typename T>
 Jensor<T>::Jensor(std::initializer_list<uint16_t> shape, AllocateOnGpu_t)
-    : Jensor(std::vector<uint16_t>(shape), true) {}
+    : is_on_gpu_(true), dims_(shape), offset_(0) {
+    assert(dims_.size() > 0 && dims_.size() <= 255 && "Jensor dimensions must be between 1 and 255");
+
+    long long total = std::accumulate(dims_.begin(), dims_.end(), 1LL, std::multiplies<long long>());
+    T* raw = nullptr;
+    cudaMalloc(&raw, sizeof(T) * total);
+    cudaMemset(raw, 0, sizeof(T) * total);
+    buf_ = std::shared_ptr<T[]>(raw, CudaDeleter<T>());
+}
 
 template <typename T>
 Jensor<T> Jensor<T>::operator[](uint16_t idx) const {
@@ -142,15 +170,6 @@ Jensor<T> Jensor<T>::operator[](uint16_t idx) const {
 }
 
 template <typename T>
-Jensor<T> Jensor<T>::operator+(const Jensor& other) const { return elementwise(other, Op::Add); }
-
-template <typename T>
-Jensor<T> Jensor<T>::operator-(const Jensor& other) const { return elementwise(other, Op::Sub); }
-
-template <typename T>
-Jensor<T> Jensor<T>::operator*(const Jensor& other) const { return elementwise(other, Op::Mul); }
-
-template <typename T>
 Jensor<T> Jensor<T>::concat(const Jensor& other) {
     (void)other;
     assert(false && "Jensor::concat is not implemented yet");
@@ -162,56 +181,6 @@ Jensor<T> Jensor<T>::reshape(std::initializer_list<uint16_t> new_shape) {
     (void)new_shape;
     assert(false && "Jensor::reshape is not implemented yet");
     return *this;
-}
-
-template <typename T>
-Jensor<T>::Jensor(std::vector<uint16_t> shape, bool gpu)
-    : is_on_gpu_(gpu), dims_(std::move(shape)), offset_(0) {
-    assert(dims_.size() > 0 && dims_.size() <= 255 && "Jensor dimensions must be between 1 and 255");
-
-    long long total = std::accumulate(dims_.begin(), dims_.end(), 1LL, std::multiplies<long long>());
-    if (is_on_gpu_) {
-        T* raw = nullptr;
-        cudaMalloc(&raw, sizeof(T) * total);
-        cudaMemset(raw, 0, sizeof(T) * total);
-        buf_ = std::shared_ptr<T[]>(raw, CudaDeleter<T>());
-    } else {
-        T* raw = new T[total];
-        std::fill(raw, raw + total, T(0));
-        buf_ = std::shared_ptr<T[]>(raw);
-    }
-}
-
-template <typename T>
-Jensor<T> Jensor<T>::elementwise(const Jensor& other, Op op) const {
-    assert(dims_ == other.dims_ && "Jensors must be the same shape");
-    assert(is_on_gpu_ == other.is_on_gpu_ && "Jensors must be on the same device");
-
-    Jensor result(dims_, is_on_gpu_);
-    long long n = std::accumulate(dims_.begin(), dims_.end(), 1LL, std::multiplies<long long>());
-    const T* a = buf_.get() + offset_;
-    const T* b = other.buf_.get() + other.offset_;
-    T* c = result.buf_.get();
-
-    if (is_on_gpu_) {
-        int threads = 256;
-        int blocks = static_cast<int>((n + threads - 1) / threads);
-        switch (op) {
-            case Op::Add: cuda_add<<<blocks, threads>>>(a, b, c, n); break;
-            case Op::Sub: cuda_sub<<<blocks, threads>>>(a, b, c, n); break;
-            case Op::Mul: cuda_mul<<<blocks, threads>>>(a, b, c, n); break;
-        }
-        cudaDeviceSynchronize();
-    } else {
-        for (long long i = 0; i < n; ++i) {
-            switch (op) {
-                case Op::Add: c[i] = a[i] + b[i]; break;
-                case Op::Sub: c[i] = a[i] - b[i]; break;
-                case Op::Mul: c[i] = a[i] * b[i]; break;
-            }
-        }
-    }
-    return result;
 }
 
 template <typename T>

@@ -9,7 +9,7 @@ namespace mytorch {
             void softmax_gpu();
         private:
 
-    }
-};
+    };
+}
 
 #endif 

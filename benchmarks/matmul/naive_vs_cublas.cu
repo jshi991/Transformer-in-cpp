@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr bool kRunNaive = false;  // see file comment above
+constexpr bool kRunNaive = false; 
 
 std::string today() {
     std::time_t t = std::time(nullptr);
@@ -36,8 +36,6 @@ std::string device_name() {
     return prop.name;
 }
 
-// Fills a GPU Jensor with random values via a host staging buffer —
-// Jensor::data() is documented as the way callers copy data in/out.
 mytorch::Jensor<float> random_gpu_jensor(uint16_t rows, uint16_t cols, std::mt19937& rng) {
     mytorch::Jensor<float> t({rows, cols}, mytorch::AllocateOnGpu);
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
@@ -62,9 +60,6 @@ float max_abs_diff(const std::vector<float>& a, const std::vector<float>& b) {
     return worst;
 }
 
-// Times `run` (already-launched-synchronously-by-the-time-it-returns work)
-// using CUDA events, per benchmarks/README.md ("timing should use CUDA
-// events... not wall-clock").
 template <typename Fn>
 float time_ms(Fn&& run) {
     cudaEvent_t start, stop;
@@ -91,14 +86,13 @@ void report_row(const std::string& impl, uint16_t M, uint16_t K, uint16_t N,
                 today().c_str(), impl.c_str(), M, K, N, device.c_str(), ms, gflops, notes.c_str());
 }
 
-}  // namespace
+} 
 
 int main() {
     using mytorch::Jensor;
     std::mt19937 rng(42);
     std::string device = device_name();
 
-    // A few shapes worth comparing; add more as needed.
     struct Shape { uint16_t M, K, N; };
     const Shape shapes[] = {{256, 256, 256}, {512, 512, 512}, {1024, 1024, 1024}};
 

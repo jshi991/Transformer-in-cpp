@@ -63,4 +63,4 @@ mytorch::Jensor<float> load_dataset_to_gpu(const std::string& path, const CharTo
     return out;
 }
 
-}  // namespace database
+}  

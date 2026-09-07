@@ -30,45 +30,23 @@ class Jensor {
         Jensor(std::initializer_list<uint16_t> shape, AllocateOnCpu_t);
         Jensor(std::initializer_list<uint16_t> shape, AllocateOnGpu_t);
 
-
-        // Backend::Naive dispatches to the hand-written kernel (agents.md/01);
-        // Backend::CuBLAS dispatches to cublasSgemm (agents.md/02) — both
-        // exist so benchmarks/matmul/ can run the same inputs through each
-        // and compare.
         enum class Backend { Naive, CuBLAS };
+        void transpose();
         Jensor matmul(const Jensor& other, Backend backend = Backend::Naive) const;
-        // Views share storage with their parent (bumps the refcount, no copy);
-        // still returns a Jensor (even 0-dimensional) rather than a raw T so
-        // that indexing stays an operation you can eventually differentiate through.
-        Jensor operator[](uint16_t idx) const;
 
-        Jensor operator+(const Jensor& other) const;
-        Jensor operator-(const Jensor& other) const;
-        Jensor operator*(const Jensor& other) const;
+        Jensor operator[](uint16_t idx) const;
 
         Jensor concat(const Jensor& other);
         Jensor reshape(std::initializer_list<uint16_t> new_shape);
-
-        // Root Jensors only (offset_ == 0) — see discussion in-session about
-        // why a view calling this is unsafe. Body still WIP.
         void move_device();
 
         const std::vector<uint16_t>& shape() const;
         bool on_gpu() const;
-
-        // Raw pointer into this Jensor's storage (already offset for views).
-        // Points into device memory when on_gpu() — deref only via cudaMemcpy
-        // or a kernel, never directly from host code. Exists so callers (e.g.
-        // database/dataset.cu) can copy data in/out; no bounds checking.
         T* data();
         const T* data() const;
 
     private:
-        enum class Op { Add, Sub, Mul };
         Jensor();
-        Jensor(std::vector<uint16_t> shape, bool gpu);
-
-        Jensor elementwise(const Jensor& other, Op op) const;
 
         bool is_on_gpu_ = false;
         std::vector<uint16_t> dims_;
@@ -78,5 +56,5 @@ class Jensor {
 
 extern template class Jensor<float>;
 
-}  // namespace mytorch
+}  
 #endif  // JENSOR_H
