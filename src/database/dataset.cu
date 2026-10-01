@@ -1,8 +1,5 @@
-#include "include/dataset/dataset.h"
+#include "dataset/dataset.h"
 
-#include <cuda_runtime.h>
-
-#include <cassert>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -48,19 +45,6 @@ std::string load_dataset_text(const std::string& path) {
     std::ostringstream ss;
     ss << file.rdbuf();
     return ss.str();
-}
-
-mytorch::Jensor<float> load_dataset_to_gpu(const std::string& path, const CharTokenizer& tok) {
-    std::string text = load_dataset_text(path);
-    std::vector<int32_t> ids = tok.encode(text);
-    assert(ids.size() <= 0xFFFF && "load_dataset_to_gpu: corpus too long for a uint16_t Jensor dim (chunking not implemented yet)");
-
-    std::vector<float> ids_f(ids.begin(), ids.end());
-
-    mytorch::Jensor<float> out({static_cast<uint16_t>(1), static_cast<uint16_t>(ids_f.size())},
-                                mytorch::AllocateOnGpu);
-    cudaMemcpy(out.data(), ids_f.data(), ids_f.size() * sizeof(float), cudaMemcpyHostToDevice);
-    return out;
 }
 
 }  
